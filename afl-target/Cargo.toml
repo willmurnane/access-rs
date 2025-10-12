@@ -1,0 +1,24 @@
+[package]
+name = "afl-target"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+afl = "*"
+access = { path = "../access" }
+
+[[bin]]
+name = "afl-access-expression"
+test = false
+doc = false
+bench = false
+[[bin]]
+name = "afl-access-tokens"
+test = false
+doc = false
+bench = false
+[[bin]]
+name = "afl-access-eval"
+test = false
+doc = false
+bench = false

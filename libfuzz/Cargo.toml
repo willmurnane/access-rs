@@ -1,0 +1,30 @@
+[package]
+name = "libfuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.access]
+path = "../access"
+
+[[bin]]
+name = "libfuzz-access-expression"
+test = false
+doc = false
+bench = false
+[[bin]]
+name = "libfuzz-access-tokens"
+test = false
+doc = false
+bench = false
+[[bin]]
+name = "libfuzz-access-eval"
+test = false
+doc = false
+bench = false

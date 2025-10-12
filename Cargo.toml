@@ -1,0 +1,3 @@
+[workspace]
+members = [ "access", "afl-target", "libfuzz"]
+resolver = "2"
