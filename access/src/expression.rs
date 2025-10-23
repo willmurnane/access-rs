@@ -14,8 +14,11 @@
   limitations under the License.
 */
 
+use std::fmt::Display;
+
 use chumsky::error::RichPattern;
 use chumsky::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use crate::{AccessExpression, ExpressionParseProblem, parser::expression_parser};
 
@@ -51,8 +54,109 @@ pub fn access_expression(input: &str) -> Result<AccessExpression, ExpressionPars
     Ok(result.into_output().expect("msg"))
 }
 
+impl Serialize for AccessExpression {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&format!("{}", self))
+    }
+}
+impl<'de> Deserialize<'de> for AccessExpression {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        String::deserialize(deserializer)
+            .and_then(|buf| access_expression(&buf).map_err(serde::de::Error::custom))
+    }
+}
+
+impl Display for AccessExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut s = String::new();
+        self.fmt(&mut s, JunctionContext::Unknown);
+        write!(f, "{}", s)
+    }
+}
+
+#[derive(Eq, PartialEq)]
+enum JunctionContext {
+    Unknown,
+    And,
+    Or,
+}
+impl AccessExpression {
+    fn fmt(&self, buf: &mut String, context: JunctionContext) {
+        match self {
+            AccessExpression::Empty => return,
+            AccessExpression::Token(t) => {
+                buf.push_str(&t.to_string());
+            }
+            AccessExpression::And(children) => {
+                if context == JunctionContext::Or {
+                    buf.push('(');
+                }
+                let mut first = true;
+                for ele in children {
+                    if !first {
+                        buf.push('&');
+                    }
+                    ele.fmt(buf, JunctionContext::And);
+                    first = false;
+                }
+
+                if context == JunctionContext::Or {
+                    buf.push(')');
+                }
+            }
+            AccessExpression::Or(children) => {
+                if context == JunctionContext::And {
+                    buf.push('(');
+                }
+                let mut first = true;
+                for ele in children {
+                    if !first {
+                        buf.push('|');
+                    }
+                    ele.fmt(buf, JunctionContext::Or);
+                    first = false;
+                }
+
+                if context == JunctionContext::And {
+                    buf.push(')');
+                }
+            }
+        }
+    }
+    pub(crate) fn and(items: Vec<AccessExpression>) -> AccessExpression {
+        let mut children = vec![];
+        for item in items {
+            match item {
+                AccessExpression::And(mut inner) => children.append(&mut inner),
+                _ => children.push(item),
+            }
+        }
+        children.sort();
+        AccessExpression::And(children)
+    }
+    pub(crate) fn or(items: Vec<AccessExpression>) -> AccessExpression {
+        let mut children = vec![];
+        for item in items {
+            match item {
+                AccessExpression::Or(mut inner) => children.append(&mut inner),
+                _ => children.push(item),
+            }
+        }
+        children.sort();
+        AccessExpression::Or(children)
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use chumsky::util::Maybe;
 
     use crate::{AccessExpression, ExpressionParseProblem, parser::token_parser};
@@ -60,7 +164,7 @@ mod tests {
     use super::*;
 
     fn token(s: &str) -> AccessExpression {
-        AccessExpression::Token(s.to_string())
+        AccessExpression::Token(crate::AccessToken::new(s))
     }
 
     #[test]
@@ -376,5 +480,73 @@ mod tests {
             access_expression("\"#\"@"),
             Err(ExpressionParseProblem::InvalidTokenStart('@'))
         )
+    }
+
+    #[test]
+    fn roundtrip() {
+        // Note: these must be instances which are sorted correctly to start with, so that they wind up serializing
+        // exactly the same.
+        for instance in ["", "a", "a&b", "banana", "a|b", "a&(b|c)", "c|(a&b)"].into_iter() {
+            assert_eq!(
+                Ok(instance),
+                access_expression(instance)
+                    .map(|i| format!("{}", i))
+                    .as_deref()
+            )
+        }
+    }
+
+    #[test]
+    fn roundtrip_serde() {
+        // Note: these must be instances which are sorted correctly to start with, so that they wind up serializing
+        // exactly the same.
+        for instance in ["a", "a&b", "banana", "a|b", "a&(b|c)", "c|(a&b)"] {
+            let mut f: HashMap<String, AccessExpression> = HashMap::new();
+            f.insert("hello".to_string(), access_expression(instance).unwrap());
+            ::serde_test::assert_tokens(
+                &f,
+                &[
+                    ::serde_test::Token::Map { len: Some(1) },
+                    ::serde_test::Token::String("hello"),
+                    ::serde_test::Token::String(instance),
+                    ::serde_test::Token::MapEnd,
+                ],
+            );
+        }
+    }
+
+    #[test]
+    fn display_epps() {
+        assert_eq!(
+            "Invalid token start '?'",
+            format!("{}", ExpressionParseProblem::InvalidTokenStart('?'))
+        );
+        assert_eq!(
+            "Missing junction",
+            format!("{}", ExpressionParseProblem::MissingJunction)
+        );
+        assert_eq!(
+            "Trailing quotes",
+            format!("{}", ExpressionParseProblem::TrailingQuotes)
+        );
+        assert_eq!(
+            "Characters after close quotes not allowed",
+            format!("{}", ExpressionParseProblem::CharactersOutsideQuotes)
+        );
+        assert_eq!(
+            "Cannot mix & with |, use parens to disambiguate",
+            format!("{}", ExpressionParseProblem::CannotMixAndWithOr)
+        );
+        assert_eq!(
+            "Empty tokens not allowed in junctions",
+            format!(
+                "{}",
+                ExpressionParseProblem::EmptyTokensNotAllowedInJunctions
+            )
+        );
+        assert_eq!(
+            "Trailing junction not allowed",
+            format!("{}", ExpressionParseProblem::TrailingJunction)
+        );
     }
 }

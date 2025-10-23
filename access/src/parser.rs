@@ -15,19 +15,25 @@
 */
 
 use crate::AccessExpression;
+use crate::AccessToken;
 use chumsky::IterParser;
 use chumsky::prelude::*;
 
-pub(crate) fn token_parser<'a>()
+pub(crate) fn unquoted_token_parser<'a>()
 -> impl Clone + Parser<'a, &'a str, String, extra::Err<Rich<'a, char>>> {
-    // escaped                 = "\" DQUOTE / "\\"
-    let escaped = just('\\').ignore_then(choice((just('"'), just('\\'))));
     // slash                   = "/"
     // access-token            = 1*( ALPHA / DIGIT / "_" / "-" / "." / ":" / slash )
-    let access_token1 = any::<'a, &'a str, extra::Err<Rich<'a, char>>>()
+    any::<'a, &'a str, extra::Err<Rich<'a, char>>>()
         .filter(|c: &char| c.is_ascii_alphanumeric() || "_-.:/".contains(*c))
         .repeated()
-        .at_least(1);
+        .at_least(1)
+        .collect::<String>()
+}
+
+pub(crate) fn token_parser<'a>()
+-> impl Clone + Parser<'a, &'a str, AccessToken, extra::Err<Rich<'a, char>>> {
+    // escaped                 = "\" DQUOTE / "\\"
+    let escaped = just('\\').ignore_then(choice((just('"'), just('\\'))));
     // utf8-subset             = %x20-21 / %x23-5B / %x5D-7E / unicode-beyond-ascii ; utf8 minus '"' and '\'
     // unicode-beyond-ascii    = %x0080-D7FF / %xE000-10FFFF
     let utf8_subset = any::<_, extra::Err<Rich<'a, char>>>().filter(|c: &char| {
@@ -40,13 +46,14 @@ pub(crate) fn token_parser<'a>()
     });
     // access-token            =/ DQUOTE 1*(utf8-subset / escaped) DQUOTE
     choice((
-        access_token1.collect::<String>(),
+        unquoted_token_parser().map(AccessToken::Unquoted),
         just('"')
             .ignore_then(
                 choice((utf8_subset, escaped))
                     .repeated()
                     .at_least(1)
-                    .collect::<String>(),
+                    .collect::<String>()
+                    .map(|s| AccessToken::new(&s)),
             )
             .then_ignore(just('"')),
     ))

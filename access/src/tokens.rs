@@ -14,15 +14,18 @@
   limitations under the License.
 */
 
-use chumsky::{error::RichPattern, prelude::*, util::Maybe};
+use std::fmt::Display;
 
-use crate::{AccessTokens, TokenParseProblem, parser::token_parser};
+use chumsky::{error::RichPattern, prelude::*, util::Maybe};
+use serde::{Deserialize, Serialize};
+
+use crate::{AccessToken, AccessTokens, TokenParseProblem, parser::token_parser};
 
 pub(crate) fn access_tokens(input: &str) -> Result<AccessTokens, TokenParseProblem> {
     let parsed = choice((
         token_parser()
             .separated_by(just(','))
-            .collect::<Vec<String>>(),
+            .collect::<Vec<AccessToken>>(),
         empty().to(vec![]),
     ))
     .parse(input);
@@ -65,8 +68,58 @@ pub(crate) fn access_tokens(input: &str) -> Result<AccessTokens, TokenParseProbl
     }
     Ok(AccessTokens::new(&parsed.into_output().expect("msg")))
 }
+
+impl AccessTokens {
+    pub fn empty() -> AccessTokens {
+        Self::new(&[])
+    }
+    pub fn new(items: &[AccessToken]) -> AccessTokens {
+        let mut tokens = items.to_vec();
+        tokens.sort();
+        AccessTokens { tokens: tokens }
+    }
+    fn fmt(&self, buffer: &mut String) {
+        let mut first = true;
+        for t in self.tokens.iter() {
+            if !first {
+                buffer.push(',');
+            }
+            buffer.push_str(&t.to_string());
+            first = false;
+        }
+    }
+}
+
+impl Display for AccessTokens {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut s = String::new();
+        self.fmt(&mut s);
+        write!(f, "{}", s)
+    }
+}
+
+impl Serialize for AccessTokens {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&format!("{}", self))
+    }
+}
+impl<'de> Deserialize<'de> for AccessTokens {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        String::deserialize(deserializer)
+            .and_then(|buf| access_tokens(&buf).map_err(serde::de::Error::custom))
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
 
     #[test]
@@ -131,7 +184,7 @@ mod tests {
         assert_eq!(
             access_tokens("a"),
             Ok(AccessTokens {
-                tokens: vec!["a".to_owned()]
+                tokens: vec![AccessToken::Unquoted("a".to_owned())]
             })
         )
     }
@@ -140,7 +193,7 @@ mod tests {
         assert_eq!(
             access_tokens("\"a\""),
             Ok(AccessTokens {
-                tokens: vec!["a".to_owned()]
+                tokens: vec![AccessToken::Unquoted("a".to_owned())]
             })
         )
     }
@@ -149,7 +202,7 @@ mod tests {
         assert_eq!(
             access_tokens("\"\\\"\""),
             Ok(AccessTokens {
-                tokens: vec!["\"".to_owned()]
+                tokens: vec![AccessToken::Quoted("\"".to_owned())]
             })
         )
     }
@@ -158,8 +211,50 @@ mod tests {
         assert_eq!(
             access_tokens("\"\\\\\""),
             Ok(AccessTokens {
-                tokens: vec!["\\".to_owned()]
+                tokens: vec![AccessToken::Quoted("\\".to_owned())]
             })
         )
+    }
+    #[test]
+    fn roundtrip_serde() {
+        // Note: these must be instances which are sorted correctly to start with, so that they wind up serializing
+        // exactly the same.
+        for instance in ["a", "a,b", "a,banana", "\"a?b\"", "a,\"a?b!\""] {
+            let mut f: HashMap<String, AccessTokens> = HashMap::new();
+            f.insert("hello".to_string(), access_tokens(instance).unwrap());
+            ::serde_test::assert_tokens(
+                &f,
+                &[
+                    ::serde_test::Token::Map { len: Some(1) },
+                    ::serde_test::Token::String("hello"),
+                    ::serde_test::Token::String(instance),
+                    ::serde_test::Token::MapEnd,
+                ],
+            );
+        }
+    }
+
+    #[test]
+    fn display_tpps() {
+        assert_eq!(
+            "Characters after quotes",
+            format!("{}", TokenParseProblem::CharactersOutsideQuotes)
+        );
+        assert_eq!(
+            "Trailing backslash while inside quotes",
+            format!("{}", TokenParseProblem::TrailingBackslashInQuotes)
+        );
+        assert_eq!(
+            "Trailing comma",
+            format!("{}", TokenParseProblem::TrailingComma)
+        );
+        assert_eq!(
+            "Unclosed quoted token",
+            format!("{}", TokenParseProblem::UnclosedQuotedToken)
+        );
+        assert_eq!(
+            "Invalid token start '?'",
+            format!("{}", TokenParseProblem::InvalidTokenStart('?'))
+        );
     }
 }

@@ -14,55 +14,61 @@
   limitations under the License.
 */
 
-use crate::{expression::access_expression, tokens::access_tokens};
+use std::fmt::Display;
+
+use chumsky::Parser;
+
+use crate::{expression::access_expression, parser::unquoted_token_parser, tokens::access_tokens};
 
 mod expression;
 mod parser;
 mod tokens;
 
-#[derive(Debug, Hash, PartialEq, Clone)]
+#[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone)]
+pub enum AccessToken {
+    Unquoted(String),
+    Quoted(String),
+}
+
+impl AccessToken {
+    fn new(value: &str) -> AccessToken {
+        if unquoted_token_parser().parse(value).has_output() {
+            AccessToken::Unquoted(value.to_string())
+        } else {
+            AccessToken::Quoted(value.to_string())
+        }
+    }
+    fn emit(&self) -> String {
+        match self {
+            AccessToken::Quoted(s) => {
+                let mut result = String::new();
+                result.push('"');
+                result.push_str(&s);
+                result.push('"');
+                result
+            }
+            AccessToken::Unquoted(s) => s.to_string(),
+        }
+    }
+}
+
+impl Display for AccessToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.emit())
+    }
+}
+
+#[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum AccessExpression {
     Empty,
-    Token(String),
+    Token(AccessToken),
     And(Vec<AccessExpression>),
     Or(Vec<AccessExpression>),
-}
-impl AccessExpression {
-    fn and(items: Vec<AccessExpression>) -> AccessExpression {
-        let mut children = vec![];
-        for item in items {
-            match item {
-                AccessExpression::And(mut inner) => children.append(&mut inner),
-                _ => children.push(item),
-            }
-        }
-        AccessExpression::And(children)
-    }
-    fn or(items: Vec<AccessExpression>) -> AccessExpression {
-        let mut children = vec![];
-        for item in items {
-            match item {
-                AccessExpression::Or(mut inner) => children.append(&mut inner),
-                _ => children.push(item),
-            }
-        }
-        AccessExpression::Or(children)
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccessTokens {
-    pub tokens: Vec<String>,
-}
-impl AccessTokens {
-    pub fn empty() -> AccessTokens {
-        Self::new(&[])
-    }
-    pub fn new(items: &[String]) -> AccessTokens {
-        AccessTokens {
-            tokens: items.to_vec(),
-        }
-    }
+    pub tokens: Vec<AccessToken>,
 }
 
 #[derive(Debug, Hash, PartialEq, Clone)]
@@ -76,6 +82,24 @@ pub enum ExpressionParseProblem {
     TrailingJunction,
 }
 
+impl Display for ExpressionParseProblem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidTokenStart(c) => write!(f, "Invalid token start '{}'", c),
+            Self::MissingJunction => write!(f, "Missing junction"),
+            Self::TrailingQuotes => write!(f, "Trailing quotes"),
+            Self::CharactersOutsideQuotes => write!(f, "Characters after close quotes not allowed"),
+            Self::CannotMixAndWithOr => {
+                write!(f, "Cannot mix & with |, use parens to disambiguate")
+            }
+            Self::EmptyTokensNotAllowedInJunctions => {
+                write!(f, "Empty tokens not allowed in junctions")
+            }
+            Self::TrailingJunction => write!(f, "Trailing junction not allowed"),
+        }
+    }
+}
+
 #[derive(Debug, Hash, PartialEq, Clone)]
 pub enum TokenParseProblem {
     TrailingComma,
@@ -83,6 +107,18 @@ pub enum TokenParseProblem {
     CharactersOutsideQuotes,
     TrailingBackslashInQuotes,
     InvalidTokenStart(char),
+}
+
+impl Display for TokenParseProblem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TrailingComma => write!(f, "Trailing comma"),
+            Self::UnclosedQuotedToken => write!(f, "Unclosed quoted token"),
+            Self::CharactersOutsideQuotes => write!(f, "Characters after quotes"),
+            Self::TrailingBackslashInQuotes => write!(f, "Trailing backslash while inside quotes"),
+            Self::InvalidTokenStart(char) => write!(f, "Invalid token start '{}'", char),
+        }
+    }
 }
 
 pub fn expression(input: &str) -> Result<AccessExpression, ExpressionParseProblem> {
@@ -108,13 +144,18 @@ mod tests {
     #[test]
     fn parse_expression() {
         assert_eq!(
-            Ok(AccessExpression::Token("a".to_string())),
+            Ok(AccessExpression::Token(AccessToken::Unquoted(
+                "a".to_string()
+            ))),
             expression("a")
         );
     }
     #[test]
     fn parse_tokens() {
-        assert_eq!(Ok(AccessTokens::new(&["a".to_string()])), tokens("a"));
+        assert_eq!(
+            Ok(AccessTokens::new(&[AccessToken::Unquoted("a".to_string())])),
+            tokens("a")
+        );
     }
     #[test]
     fn evaluate_empty_empty() {
@@ -123,65 +164,105 @@ mod tests {
     #[test]
     fn evaluate_token_match() {
         assert!(evaluate(
-            &AccessExpression::Token("a".to_string()),
-            &AccessTokens::new(&["a".to_string()])
+            &AccessExpression::Token(AccessToken::Unquoted("a".to_string())),
+            &AccessTokens::new(&[AccessToken::Unquoted("a".to_string())])
         ))
     }
     #[test]
     fn evaluate_token_not_match() {
         assert!(!evaluate(
-            &AccessExpression::Token("b".to_string()),
-            &AccessTokens::new(&["a".to_string()])
+            &AccessExpression::Token(AccessToken::Unquoted("b".to_string())),
+            &AccessTokens::new(&[AccessToken::Unquoted("a".to_string())])
         ))
     }
     #[test]
     fn evaluate_and_match() {
         assert!(evaluate(
             &AccessExpression::And(vec![
-                AccessExpression::Token("a".to_string()),
-                AccessExpression::Token("b".to_string())
+                AccessExpression::Token(AccessToken::Unquoted("a".to_string())),
+                AccessExpression::Token(AccessToken::Unquoted("b".to_string()))
             ]),
-            &AccessTokens::new(&["a".to_string(), "b".to_string()])
+            &AccessTokens::new(&[
+                AccessToken::Unquoted("a".to_string()),
+                AccessToken::Unquoted("b".to_string())
+            ])
         ))
     }
     #[test]
     fn evaluate_and_not_match() {
         assert!(!evaluate(
             &AccessExpression::And(vec![
-                AccessExpression::Token("a".to_string()),
-                AccessExpression::Token("b".to_string())
+                AccessExpression::Token(AccessToken::Unquoted("a".to_string())),
+                AccessExpression::Token(AccessToken::Unquoted("b".to_string()))
             ]),
-            &AccessTokens::new(&["a".to_string(), "c".to_string()])
+            &AccessTokens::new(&[
+                AccessToken::Unquoted("a".to_string()),
+                AccessToken::Unquoted("c".to_string())
+            ])
         ))
     }
     #[test]
     fn evaluate_or_match_first() {
         assert!(evaluate(
             &AccessExpression::Or(vec![
-                AccessExpression::Token("a".to_string()),
-                AccessExpression::Token("b".to_string())
+                AccessExpression::Token(AccessToken::Unquoted("a".to_string())),
+                AccessExpression::Token(AccessToken::Unquoted("b".to_string()))
             ]),
-            &AccessTokens::new(&["a".to_string()])
+            &AccessTokens::new(&[AccessToken::Unquoted("a".to_string())])
         ))
     }
     #[test]
     fn evaluate_or_match_second() {
         assert!(evaluate(
             &AccessExpression::Or(vec![
-                AccessExpression::Token("a".to_string()),
-                AccessExpression::Token("b".to_string())
+                AccessExpression::Token(AccessToken::Unquoted("a".to_string())),
+                AccessExpression::Token(AccessToken::Unquoted("b".to_string()))
             ]),
-            &AccessTokens::new(&["b".to_string()])
+            &AccessTokens::new(&[AccessToken::Unquoted("b".to_string())])
         ))
     }
     #[test]
     fn evaluate_or_not_match() {
         assert!(!evaluate(
             &AccessExpression::Or(vec![
-                AccessExpression::Token("a".to_string()),
-                AccessExpression::Token("b".to_string())
+                AccessExpression::Token(AccessToken::Unquoted("a".to_string())),
+                AccessExpression::Token(AccessToken::Unquoted("b".to_string()))
             ]),
-            &AccessTokens::new(&["c".to_string()])
+            &AccessTokens::new(&[AccessToken::Unquoted("c".to_string())])
         ))
+    }
+    #[test]
+    fn display_unquoted_token() {
+        assert_eq!(
+            format!(
+                "{}",
+                AccessExpression::Token(AccessToken::Unquoted("a".to_string()))
+            ),
+            "a"
+        );
+    }
+    #[test]
+    fn display_quoted_token() {
+        assert_eq!(
+            format!(
+                "{}",
+                AccessExpression::Token(AccessToken::Quoted("?".to_string()))
+            ),
+            "\"?\""
+        );
+    }
+
+    #[test]
+    fn display_and() {
+        assert_eq!(
+            format!(
+                "{}",
+                &AccessExpression::And(vec![
+                    AccessExpression::Token(AccessToken::Unquoted("a".to_string())),
+                    AccessExpression::Token(AccessToken::Unquoted("b".to_string()))
+                ])
+            ),
+            "a&b"
+        );
     }
 }
