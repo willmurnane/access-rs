@@ -1,0 +1,64 @@
+name: Rust
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          components: clippy
+      - name: Lint
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+  test-and-cover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+          components: llvm-tools
+      - name: Install llvm-cov
+        run: cargo install cargo-llvm-cov
+      - name: coverage-html
+        run: cargo llvm-cov --html --branch
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: target/llvm-cov/html/
+      - name: coverage-lcov
+        run: cargo llvm-cov --lcov --branch --output-path target/lcov
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lcov
+          path: target/lcov
+
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      - name: Build
+        run: cargo build --release --package access
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lib
+          path: |
+            target/release/libaccess.*
+            !target/release/libaccess.d
