@@ -12,6 +12,7 @@ readme = "README.md"
 [dependencies]
 afl = "*"
 access = { path = "../access", features = ["debug_simplify"] }
+j4rs = "*"
 
 [[bin]]
 name = "afl-access-eval"
