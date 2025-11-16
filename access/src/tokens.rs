@@ -21,7 +21,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{AccessToken, AccessTokens, TokenParseProblem, parser::token_parser};
 
-pub(crate) fn access_tokens(input: &str) -> Result<AccessTokens, TokenParseProblem> {
+pub fn access_tokens(
+    input: &str,
+) -> Result<AccessTokens, (std::ops::Range<usize>, TokenParseProblem)> {
     let parsed = choice((
         token_parser()
             .separated_by(just(','))
@@ -31,56 +33,56 @@ pub(crate) fn access_tokens(input: &str) -> Result<AccessTokens, TokenParseProbl
     .parse(input);
     if let Some(err) = parsed.errors().next() {
         let expected: Vec<&RichPattern<'_, char>> = err.expected().collect::<Vec<_>>();
-        return Err(match expected[..] {
-            [&RichPattern::Any, &RichPattern::Token(Maybe::Val('"'))] => {
-                TokenParseProblem::TrailingComma
-            }
-            [RichPattern::Any, &RichPattern::Token(Maybe::Val('\\'))] => {
-                TokenParseProblem::UnclosedQuotedToken
-            }
-            [
-                RichPattern::Any,
-                &RichPattern::Token(Maybe::Val('\\')),
-                &RichPattern::Token(Maybe::Val('"')),
-            ] => TokenParseProblem::UnclosedQuotedToken,
-            [RichPattern::SomethingElse, &RichPattern::Token(_)]
-            | [
-                RichPattern::SomethingElse,
-                &RichPattern::Token(_),
-                &RichPattern::Token(_),
-            ]
-            | [
-                RichPattern::SomethingElse,
-                &RichPattern::Token(_),
-                RichPattern::EndOfInput,
-            ] => TokenParseProblem::InvalidTokenStart(
-                *err.found().expect("Should have found a character"),
-            ),
-            [
-                &RichPattern::Token(Maybe::Val(',')),
-                RichPattern::EndOfInput,
-            ] => TokenParseProblem::CharactersOutsideQuotes,
-            // Note: This is the only pattern I've observed for real
-            // [&RichPattern::Token(Maybe::Val('"')), &RichPattern::Token(Maybe::Val('\\'))]
-            // and this is just to make the match exhaustive.
-            _ => TokenParseProblem::TrailingBackslashInQuotes,
-        });
+        return Err((
+            err.span().into_range(),
+            match expected[..] {
+                [&RichPattern::Any, &RichPattern::Token(Maybe::Val('"'))] => {
+                    TokenParseProblem::TrailingComma
+                }
+                [RichPattern::Any, &RichPattern::Token(Maybe::Val('\\'))] => {
+                    TokenParseProblem::UnclosedQuotedToken
+                }
+                [
+                    RichPattern::Any,
+                    &RichPattern::Token(Maybe::Val('\\')),
+                    &RichPattern::Token(Maybe::Val('"')),
+                ] => TokenParseProblem::UnclosedQuotedToken,
+                [RichPattern::SomethingElse, &RichPattern::Token(_)]
+                | [
+                    RichPattern::SomethingElse,
+                    &RichPattern::Token(_),
+                    &RichPattern::Token(_) | RichPattern::EndOfInput,
+                ] => TokenParseProblem::InvalidTokenStart(
+                    *err.found().expect("Should have found a character"),
+                ),
+                [
+                    &RichPattern::Token(Maybe::Val(',')),
+                    RichPattern::EndOfInput,
+                ] => TokenParseProblem::CharactersOutsideQuotes,
+                // Note: This is the only pattern I've observed for real
+                // [&RichPattern::Token(Maybe::Val('"')), &RichPattern::Token(Maybe::Val('\\'))]
+                // and this is just to make the match exhaustive.
+                _ => TokenParseProblem::TrailingBackslashInQuotes,
+            },
+        ));
     }
     Ok(AccessTokens::new(&parsed.into_output().expect("msg")))
 }
 
 impl AccessTokens {
-    pub fn empty() -> AccessTokens {
+    #[must_use]
+    pub fn empty() -> Self {
         Self::new(&[])
     }
-    pub fn new(items: &[AccessToken]) -> AccessTokens {
+    #[must_use]
+    pub fn new(items: &[AccessToken]) -> Self {
         let mut tokens = items.to_vec();
         tokens.sort();
-        AccessTokens { tokens: tokens }
+        Self { tokens }
     }
     fn fmt(&self, buffer: &mut String) {
         let mut first = true;
-        for t in self.tokens.iter() {
+        for t in &self.tokens {
             if !first {
                 buffer.push(',');
             }
@@ -94,7 +96,7 @@ impl Display for AccessTokens {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut s = String::new();
         self.fmt(&mut s);
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 
@@ -103,7 +105,7 @@ impl Serialize for AccessTokens {
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(&format!("{}", self))
+        serializer.serialize_str(&format!("{self}"))
     }
 }
 impl<'de> Deserialize<'de> for AccessTokens {
@@ -111,8 +113,9 @@ impl<'de> Deserialize<'de> for AccessTokens {
     where
         D: serde::Deserializer<'de>,
     {
-        String::deserialize(deserializer)
-            .and_then(|buf| access_tokens(&buf).map_err(serde::de::Error::custom))
+        String::deserialize(deserializer).and_then(|buf| {
+            access_tokens(&buf).map_err(|(_location, err)| serde::de::Error::custom(err))
+        })
     }
 }
 
@@ -130,53 +133,56 @@ mod tests {
     fn single_invalid_char() {
         assert_eq!(
             access_tokens("\t"),
-            Err(TokenParseProblem::InvalidTokenStart('\t'))
+            Err((0..1, TokenParseProblem::InvalidTokenStart('\t')))
         )
     }
     #[test]
     fn second_invalid_char() {
         assert_eq!(
             access_tokens("a\t"),
-            Err(TokenParseProblem::InvalidTokenStart('\t'))
+            Err((1..2, TokenParseProblem::InvalidTokenStart('\t')))
         )
     }
     #[test]
     fn trailing_comma() {
-        assert_eq!(access_tokens("a,"), Err(TokenParseProblem::TrailingComma))
+        assert_eq!(
+            access_tokens("a,"),
+            Err((2..2, TokenParseProblem::TrailingComma))
+        )
     }
     #[test]
     fn trailing_quote() {
         assert_eq!(
             access_tokens("a,\""),
-            Err(TokenParseProblem::UnclosedQuotedToken)
+            Err((3..3, TokenParseProblem::UnclosedQuotedToken))
         )
     }
     #[test]
     fn trailing_partial_token() {
         assert_eq!(
             access_tokens("a,\"b"),
-            Err(TokenParseProblem::UnclosedQuotedToken)
+            Err((4..4, TokenParseProblem::UnclosedQuotedToken))
         )
     }
     #[test]
     fn invalid_second_token() {
         assert_eq!(
             access_tokens("a,#"),
-            Err(TokenParseProblem::InvalidTokenStart('#'))
+            Err((2..3, TokenParseProblem::InvalidTokenStart('#')))
         )
     }
     #[test]
     fn chars_after_quotes() {
         assert_eq!(
             access_tokens("\"a\"b"),
-            Err(TokenParseProblem::CharactersOutsideQuotes)
+            Err((3..4, TokenParseProblem::CharactersOutsideQuotes))
         )
     }
     #[test]
     fn trailing_backslash() {
         assert_eq!(
             access_tokens("\"a\\"),
-            Err(TokenParseProblem::TrailingBackslashInQuotes)
+            Err((3..3, TokenParseProblem::TrailingBackslashInQuotes))
         )
     }
     #[test]

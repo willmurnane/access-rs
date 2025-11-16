@@ -2,6 +2,12 @@
 name = "afl-target"
 version = "0.1.0"
 edition = "2024"
+license = "Apache-2.0"
+description = "AFL target for validating the access package"
+keywords = ["fuzz", "accumulo-access"]
+categories = ["security"]
+repository = "https://github.com/willmurnane/access-rs"
+readme = "README.md"
 
 [dependencies]
 afl = "*"

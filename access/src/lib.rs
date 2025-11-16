@@ -14,15 +14,17 @@
   limitations under the License.
 */
 
+#![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
+
 use std::fmt::Display;
 
 use chumsky::Parser;
 
 use crate::{expression::access_expression, parser::unquoted_token_parser, tokens::access_tokens};
 
-mod expression;
-mod parser;
-mod tokens;
+pub(crate) mod expression;
+pub(crate) mod parser;
+pub(crate) mod tokens;
 
 #[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum AccessToken {
@@ -31,23 +33,23 @@ pub enum AccessToken {
 }
 
 impl AccessToken {
-    fn new(value: &str) -> AccessToken {
+    fn new(value: &str) -> Self {
         if unquoted_token_parser().parse(value).has_output() {
-            AccessToken::Unquoted(value.to_string())
+            Self::Unquoted(value.to_string())
         } else {
-            AccessToken::Quoted(value.to_string())
+            Self::Quoted(value.to_string())
         }
     }
     fn emit(&self) -> String {
         match self {
-            AccessToken::Quoted(s) => {
+            Self::Quoted(s) => {
                 let mut result = String::new();
                 result.push('"');
-                result.push_str(&s);
+                result.push_str(s);
                 result.push('"');
                 result
             }
-            AccessToken::Unquoted(s) => s.to_string(),
+            Self::Unquoted(s) => s.clone(),
         }
     }
 }
@@ -62,8 +64,8 @@ impl Display for AccessToken {
 pub enum AccessExpression {
     Empty,
     Token(AccessToken),
-    And(Vec<AccessExpression>),
-    Or(Vec<AccessExpression>),
+    And(Vec<Self>),
+    Or(Vec<Self>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,7 +73,7 @@ pub struct AccessTokens {
     pub tokens: Vec<AccessToken>,
 }
 
-#[derive(Debug, Hash, PartialEq, Clone)]
+#[derive(Debug, Hash, Eq, PartialEq, Clone)]
 pub enum ExpressionParseProblem {
     InvalidTokenStart(char),
     MissingJunction,
@@ -85,7 +87,7 @@ pub enum ExpressionParseProblem {
 impl Display for ExpressionParseProblem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::InvalidTokenStart(c) => write!(f, "Invalid token start '{}'", c),
+            Self::InvalidTokenStart(c) => write!(f, "Invalid token start '{c}'"),
             Self::MissingJunction => write!(f, "Missing junction"),
             Self::TrailingQuotes => write!(f, "Trailing quotes"),
             Self::CharactersOutsideQuotes => write!(f, "Characters after close quotes not allowed"),
@@ -100,7 +102,7 @@ impl Display for ExpressionParseProblem {
     }
 }
 
-#[derive(Debug, Hash, PartialEq, Clone)]
+#[derive(Debug, Hash, Eq, PartialEq, Clone)]
 pub enum TokenParseProblem {
     TrailingComma,
     UnclosedQuotedToken,
@@ -116,18 +118,30 @@ impl Display for TokenParseProblem {
             Self::UnclosedQuotedToken => write!(f, "Unclosed quoted token"),
             Self::CharactersOutsideQuotes => write!(f, "Characters after quotes"),
             Self::TrailingBackslashInQuotes => write!(f, "Trailing backslash while inside quotes"),
-            Self::InvalidTokenStart(char) => write!(f, "Invalid token start '{}'", char),
+            Self::InvalidTokenStart(char) => write!(f, "Invalid token start '{char}'"),
         }
     }
 }
 
-pub fn expression(input: &str) -> Result<AccessExpression, ExpressionParseProblem> {
+/// Attempt to parse the given string as an `AccessExpression`.
+/// # Errors
+///
+/// If the string cannot be interpreted as a valid `AccessExpression`, a tuple with the location of the problem and one of the values of `ExpressionParseProblem` will be returned.
+pub fn expression(
+    input: &str,
+) -> Result<AccessExpression, (std::ops::Range<usize>, ExpressionParseProblem)> {
     access_expression(input)
 }
-pub fn tokens(input: &str) -> Result<AccessTokens, TokenParseProblem> {
+
+/// Attempt to parse the given string as `AccessTokens`.
+/// # Errors
+///
+/// If the string cannot be interpreted as a valid `AccessTokens`, a tuple with the location of the problem and one of the values of `TokenParseProblem` will be returned.
+pub fn tokens(input: &str) -> Result<AccessTokens, (std::ops::Range<usize>, TokenParseProblem)> {
     access_tokens(input)
 }
 
+#[must_use]
 pub fn evaluate(expression: &AccessExpression, tokens: &AccessTokens) -> bool {
     match (expression, tokens) {
         (AccessExpression::Empty, _) => true,
