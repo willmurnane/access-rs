@@ -2,6 +2,12 @@
 name = "access"
 version = "0.1.0"
 edition = "2024"
+description = "Accumulo access standard implemented in Rust"
+license = "Apache-2.0"
+repository = "https://github.com/willmurnane/access-rs"
+readme = "README.md"
+keywords = ["accumulo-access"]
+categories = ["authentication", "security"]
 
 [dependencies]
 ariadne = "0.5"

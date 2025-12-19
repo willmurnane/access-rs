@@ -22,13 +22,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::{AccessExpression, ExpressionParseProblem, parser::expression_parser};
 
-pub fn access_expression(input: &str) -> Result<AccessExpression, ExpressionParseProblem> {
+pub fn access_expression(
+    input: &str,
+) -> Result<AccessExpression, (std::ops::Range<usize>, ExpressionParseProblem)> {
     let result = choice((expression_parser(), empty().to(AccessExpression::Empty))).parse(input);
 
     if let Some(err) = result.errors().next() {
-        return Err(match err.found() {
-            None => ExpressionParseProblem::TrailingJunction,
-            Some(f) => {
+        return Err(err
+            .found()
+            .map_or(ExpressionParseProblem::TrailingJunction, |f| {
                 if matches!(*f, '|' | '&') {
                     if err
                         .expected()
@@ -48,8 +50,8 @@ pub fn access_expression(input: &str) -> Result<AccessExpression, ExpressionPars
                         _ => ExpressionParseProblem::InvalidTokenStart(*f),
                     }
                 }
-            }
-        });
+            }))
+        .map_err(|epp| (err.span().into_range(), epp));
     }
     Ok(result.into_output().expect("msg"))
 }
@@ -59,7 +61,7 @@ impl Serialize for AccessExpression {
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(&format!("{}", self))
+        serializer.serialize_str(&format!("{self}"))
     }
 }
 impl<'de> Deserialize<'de> for AccessExpression {
@@ -67,8 +69,9 @@ impl<'de> Deserialize<'de> for AccessExpression {
     where
         D: serde::Deserializer<'de>,
     {
-        String::deserialize(deserializer)
-            .and_then(|buf| access_expression(&buf).map_err(serde::de::Error::custom))
+        String::deserialize(deserializer).and_then(|buf| {
+            access_expression(&buf).map_err(|(_location, err)| serde::de::Error::custom(err))
+        })
     }
 }
 
@@ -76,11 +79,11 @@ impl Display for AccessExpression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut s = String::new();
         self.fmt(&mut s, JunctionContext::Unknown);
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 
-#[derive(Eq, PartialEq)]
+#[derive(Eq, PartialEq, Copy, Clone)]
 enum JunctionContext {
     Unknown,
     And,
@@ -89,11 +92,11 @@ enum JunctionContext {
 impl AccessExpression {
     fn fmt(&self, buf: &mut String, context: JunctionContext) {
         match self {
-            AccessExpression::Empty => return,
-            AccessExpression::Token(t) => {
+            Self::Empty => (),
+            Self::Token(t) => {
                 buf.push_str(&t.to_string());
             }
-            AccessExpression::And(children) => {
+            Self::And(children) => {
                 if context == JunctionContext::Or {
                     buf.push('(');
                 }
@@ -110,7 +113,7 @@ impl AccessExpression {
                     buf.push(')');
                 }
             }
-            AccessExpression::Or(children) => {
+            Self::Or(children) => {
                 if context == JunctionContext::And {
                     buf.push('(');
                 }
@@ -129,27 +132,27 @@ impl AccessExpression {
             }
         }
     }
-    pub(crate) fn and(items: Vec<AccessExpression>) -> AccessExpression {
+    pub(crate) fn and(items: Vec<Self>) -> Self {
         let mut children = vec![];
         for item in items {
             match item {
-                AccessExpression::And(mut inner) => children.append(&mut inner),
+                Self::And(mut inner) => children.append(&mut inner),
                 _ => children.push(item),
             }
         }
         children.sort();
-        AccessExpression::And(children)
+        Self::And(children)
     }
-    pub(crate) fn or(items: Vec<AccessExpression>) -> AccessExpression {
+    pub(crate) fn or(items: Vec<Self>) -> Self {
         let mut children = vec![];
         for item in items {
             match item {
-                AccessExpression::Or(mut inner) => children.append(&mut inner),
+                Self::Or(mut inner) => children.append(&mut inner),
                 _ => children.push(item),
             }
         }
         children.sort();
-        AccessExpression::Or(children)
+        Self::Or(children)
     }
 }
 
@@ -199,7 +202,7 @@ mod tests {
     fn trailing_quote() {
         assert_eq!(
             access_expression("a\""),
-            Err(ExpressionParseProblem::TrailingQuotes)
+            Err((1..2, ExpressionParseProblem::TrailingQuotes))
         );
     }
     #[test]
@@ -239,7 +242,7 @@ mod tests {
     fn andand() {
         assert_eq!(
             access_expression("a&&"),
-            Err(ExpressionParseProblem::InvalidTokenStart('&'))
+            Err((2..3, ExpressionParseProblem::InvalidTokenStart('&')))
         );
     }
     #[test]
@@ -264,14 +267,14 @@ mod tests {
     fn trailing_and() {
         assert_eq!(
             access_expression("a&"),
-            Err(ExpressionParseProblem::TrailingJunction)
+            Err((2..2, ExpressionParseProblem::TrailingJunction))
         );
     }
     #[test]
     fn trailing_and2() {
         assert_eq!(
             access_expression("a&b&"),
-            Err(ExpressionParseProblem::TrailingJunction)
+            Err((4..4, ExpressionParseProblem::TrailingJunction))
         )
     }
     #[test]
@@ -338,7 +341,7 @@ mod tests {
     fn paren_andand() {
         assert_eq!(
             access_expression("(a&)"),
-            Err(ExpressionParseProblem::InvalidTokenStart(')'))
+            Err((3..4, ExpressionParseProblem::InvalidTokenStart(')')))
         );
     }
 
@@ -401,84 +404,84 @@ mod tests {
     fn mixed_junction_and_or() {
         assert_eq!(
             access_expression("a&b|c"),
-            Err(ExpressionParseProblem::CannotMixAndWithOr)
+            Err((3..4, ExpressionParseProblem::CannotMixAndWithOr))
         );
     }
     #[test]
     fn mixed_junction_or_and() {
         assert_eq!(
             access_expression("a|b&c"),
-            Err(ExpressionParseProblem::CannotMixAndWithOr)
+            Err((3..4, ExpressionParseProblem::CannotMixAndWithOr))
         );
     }
     #[test]
     fn mixed_junction_and_or_and() {
         assert_eq!(
             access_expression("a&b|c&d"),
-            Err(ExpressionParseProblem::CannotMixAndWithOr)
+            Err((3..4, ExpressionParseProblem::CannotMixAndWithOr))
         );
     }
     #[test]
     fn mixed_junction_or_and_or() {
         assert_eq!(
             access_expression("a|b&c|d"),
-            Err(ExpressionParseProblem::CannotMixAndWithOr)
+            Err((3..4, ExpressionParseProblem::CannotMixAndWithOr))
         );
     }
     #[test]
     fn mixed_junction_and_and_or() {
         assert_eq!(
             access_expression("a&b&c|d"),
-            Err(ExpressionParseProblem::CannotMixAndWithOr)
+            Err((5..6, ExpressionParseProblem::CannotMixAndWithOr))
         );
     }
     #[test]
     fn mixed_junction_or_or_and() {
         assert_eq!(
             access_expression("a|b|c&d"),
-            Err(ExpressionParseProblem::CannotMixAndWithOr)
+            Err((5..6, ExpressionParseProblem::CannotMixAndWithOr))
         );
     }
     #[test]
     fn junction_after_paren_and() {
         assert_eq!(
             access_expression("a(&"),
-            Err(ExpressionParseProblem::MissingJunction)
+            Err((1..2, ExpressionParseProblem::MissingJunction))
         )
     }
     #[test]
     fn junction_after_paren_or() {
         assert_eq!(
             access_expression("a(|"),
-            Err(ExpressionParseProblem::MissingJunction)
+            Err((1..2, ExpressionParseProblem::MissingJunction))
         )
     }
     #[test]
     fn legal_character_after_quoted_token1() {
         assert_eq!(
             access_expression("\"a\"1"),
-            Err(ExpressionParseProblem::CharactersOutsideQuotes)
+            Err((3..4, ExpressionParseProblem::CharactersOutsideQuotes))
         )
     }
     #[test]
     fn legal_character_after_quoted_token2() {
         assert_eq!(
             access_expression("\"a\"a"),
-            Err(ExpressionParseProblem::CharactersOutsideQuotes)
+            Err((3..4, ExpressionParseProblem::CharactersOutsideQuotes))
         )
     }
     #[test]
     fn legal_character_after_quoted_token3() {
         assert_eq!(
             access_expression("\"a\"A"),
-            Err(ExpressionParseProblem::CharactersOutsideQuotes)
+            Err((3..4, ExpressionParseProblem::CharactersOutsideQuotes))
         )
     }
     #[test]
     fn illegal_character_after_quoted_token() {
         assert_eq!(
             access_expression("\"#\"@"),
-            Err(ExpressionParseProblem::InvalidTokenStart('@'))
+            Err((3..4, ExpressionParseProblem::InvalidTokenStart('@')))
         )
     }
 

@@ -19,7 +19,7 @@ use crate::AccessToken;
 use chumsky::IterParser;
 use chumsky::prelude::*;
 
-pub(crate) fn unquoted_token_parser<'a>()
+pub fn unquoted_token_parser<'a>()
 -> impl Clone + Parser<'a, &'a str, String, extra::Err<Rich<'a, char>>> {
     // slash                   = "/"
     // access-token            = 1*( ALPHA / DIGIT / "_" / "-" / "." / ":" / slash )
@@ -30,7 +30,7 @@ pub(crate) fn unquoted_token_parser<'a>()
         .collect::<String>()
 }
 
-pub(crate) fn token_parser<'a>()
+pub fn token_parser<'a>()
 -> impl Clone + Parser<'a, &'a str, AccessToken, extra::Err<Rich<'a, char>>> {
     // escaped                 = "\" DQUOTE / "\\"
     let escaped = just('\\').ignore_then(choice((just('"'), just('\\'))));
@@ -59,7 +59,7 @@ pub(crate) fn token_parser<'a>()
     ))
 }
 
-pub(crate) fn expression_parser<'a>()
+pub fn expression_parser<'a>()
 -> impl Clone + Parser<'a, &'a str, AccessExpression, extra::Err<Rich<'a, char>>> {
     recursive(|exp| {
         let paren_or_token = choice((

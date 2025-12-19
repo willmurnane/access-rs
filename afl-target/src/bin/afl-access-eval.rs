@@ -27,7 +27,7 @@ fn main() {
             && let Ok(expression) = access::expression(expression_str)
             && let Ok(tokens) = access::tokens(token_str)
         {
-            evaluate(&expression, &tokens);
+            let _ = evaluate(&expression, &tokens);
         }
     });
 }

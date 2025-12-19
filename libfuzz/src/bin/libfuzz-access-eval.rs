@@ -29,7 +29,7 @@ fuzz_target!(|data: &[u8]| {
                 access::expression(expression_str),
                 access::tokens(token_str),
             ) {
-                evaluate(&expression, &tokens);
+                let _ = evaluate(&expression, &tokens);
             }
         }
     }

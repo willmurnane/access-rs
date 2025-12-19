@@ -23,6 +23,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
+          args: --all -- -D warnings
   test-and-cover:
     runs-on: ubuntu-latest
     steps:
@@ -46,6 +47,17 @@ jobs:
         with:
           name: lcov
           path: target/lcov
+  mutants:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      - name: Install llvm-cov
+        run: cargo install cargo-mutants
+      - name: mutants
+        run: cargo mutants --package access
 
   release:
     runs-on: ubuntu-latest
