@@ -2,8 +2,7 @@ use std::collections::HashSet;
 
 use crate::{AccessExpression, AccessToken};
 #[cfg(feature = "debug_simplify")]
-use tracing::instrument;
-use tracing::{Level, event, info};
+use tracing::{Level, event, info, instrument};
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
 enum JunctionType {
@@ -11,6 +10,7 @@ enum JunctionType {
     Or,
 }
 impl JunctionType {
+    #[cfg(feature = "debug_simplify")]
     #[must_use]
     const fn name(self) -> &'static str {
         match self {
@@ -131,6 +131,7 @@ fn simplify_inner(
         &inner_junctions,
     );
     if junction_type == JunctionType::Or && squash_result.is_none() {
+        #[cfg(feature = "debug_simplify")]
         info!(
             "Simplified OR {:?} to EMPTY while assuming {:?}",
             children, new_assumed_tokens
@@ -203,6 +204,7 @@ fn simplify_inner(
 
     // Finally, if we are left with a single child, return the child rather than wrapping it...
 
+    #[cfg(feature = "debug_simplify")]
     info!(
         "Simplified {} {:?} to {:?} while assuming {:?}",
         junction_type.name(),
@@ -262,6 +264,7 @@ fn simplify_with_context(
         if junction_type == JunctionType::Or && found_empty {
             return None;
         }
+        #[cfg(feature = "debug_simplify")]
         event!(
             Level::INFO,
             "Loop iteration: reduced {top_level_tokens:?} and {inner_junctions:?} to {next_tokens:?} and {next_inner_junctions:?} by holding {new_assumed_tokens:?}"
@@ -282,6 +285,7 @@ fn simplify_with_context(
                 // If this is an OR, and we already know that one of the tokens in a sub-expression is held, this
                 // entire clause is true and can be eliminated. This is the 'A&(A|B)' case mentioned earlier.
                 if top_level_tokens.iter().any(|t| assumed_tokens.contains(t)) {
+                    #[cfg(feature = "debug_simplify")]
                     event!(
                         Level::INFO,
                         "Found redundant OR clause: {top_level_tokens:?} {new_inner_junctions:?}"
@@ -295,6 +299,7 @@ fn simplify_with_context(
         if next_tokens.is_empty() || new_inner_junctions.is_empty() {
             break;
         }
+        #[cfg(feature = "debug_simplify")]
         info!(
             "Found new top-level tokens {next_tokens:?} in {}, remaining tokens {top_level_tokens:?} junctions {new_inner_junctions:?}",
             junction_type.name()
@@ -446,6 +451,7 @@ pub fn verify_simplification(expression: &AccessExpression) {
     verify_equivalence(expression, &expression.simplify());
 }
 
+#[cfg(any(feature = "debug_simplify", test))]
 pub fn verify_equivalence(e1: &AccessExpression, e2: &AccessExpression) {
     let tokens = e1.relevant_tokens();
 
@@ -480,6 +486,8 @@ mod tests {
         expression::access_expression,
         simplify::{is_implied_by, simplify, verify_equivalence},
     };
+    #[cfg(feature = "debug_simplify")]
+    use tracing::info;
 
     fn test_with_parsing(input: &str, output: &str) {
         #[cfg(feature = "debug_simplify")]
@@ -487,9 +495,11 @@ mod tests {
 
         let lhs = access_expression(input).expect("Input could not be parsed");
         let rhs = access_expression(output).expect("Output could not be parsed");
-        println!("Checking equivalence of provided input to provided output");
+        #[cfg(feature = "debug_simplify")]
+        info!("Checking equivalence of provided input to provided output");
         verify_equivalence(&lhs, &rhs);
-        println!("Checking that provided input simplifies to provided output");
+        #[cfg(feature = "debug_simplify")]
+        info!("Checking that provided input simplifies to provided output");
         assert_eq!(
             lhs.simplify(),
             rhs,

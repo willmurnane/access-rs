@@ -10,14 +10,14 @@ keywords = ["accumulo-access"]
 categories = ["authentication", "security"]
 
 [features]
-debug_simplify = []
+debug_simplify = ["tracing", "tracing-subscriber"]
 
 [dependencies]
 ariadne = "0.6"
 chumsky = "0.12"
 serde = "1.0"
-tracing = "0.1.43"
-tracing-subscriber = "0.3.22"
+tracing = { version = "0.1.43", optional = true }
+tracing-subscriber = { version = "0.3.22", optional = true }
 
 [dev-dependencies]
 criterion = "0.8"
