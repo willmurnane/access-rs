@@ -9,15 +9,23 @@ readme = "README.md"
 keywords = ["accumulo-access"]
 categories = ["authentication", "security"]
 
+[features]
+debug_simplify = ["tracing", "tracing-subscriber"]
+
 [dependencies]
-ariadne = "0.5"
-chumsky = "0.11"
+ariadne = "0.6"
+chumsky = "0.12"
 serde = "1.0"
+tracing = { version = "0.1.43", optional = true }
+tracing-subscriber = { version = "0.3.22", optional = true }
 
 [dev-dependencies]
-criterion = "0.7"
+criterion = "0.8"
 serde_test = "1.0"
 
 [[bench]]
 name = "access"
 harness = false
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage,coverage_nightly)'] }

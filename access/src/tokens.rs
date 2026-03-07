@@ -241,6 +241,14 @@ mod tests {
     }
 
     #[test]
+    fn errors_serde() {
+        ::serde_test::assert_de_tokens_error::<AccessTokens>(
+            &[::serde_test::Token::String("a,b,")],
+            "Trailing comma",
+        )
+    }
+
+    #[test]
     fn display_tpps() {
         assert_eq!(
             "Characters after quotes",

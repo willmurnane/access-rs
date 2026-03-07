@@ -14,13 +14,15 @@
   limitations under the License.
 */
 
-use std::fmt::Display;
+use std::{collections::HashSet, fmt::Display};
 
 use chumsky::error::RichPattern;
 use chumsky::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::{AccessExpression, ExpressionParseProblem, parser::expression_parser};
+use crate::{
+    AccessExpression, AccessToken, AccessTokens, ExpressionParseProblem, parser::expression_parser,
+};
 
 pub fn access_expression(
     input: &str,
@@ -153,6 +155,28 @@ impl AccessExpression {
         }
         children.sort();
         Self::Or(children)
+    }
+    #[must_use]
+    pub fn relevant_tokens(&self) -> AccessTokens {
+        fn inner(tokens: &mut HashSet<AccessToken>, exp: &AccessExpression) {
+            match exp {
+                AccessExpression::Empty => {}
+                AccessExpression::Token(t) => {
+                    tokens.insert(t.clone());
+                }
+                AccessExpression::Or(c) | AccessExpression::And(c) => {
+                    for ele in c {
+                        inner(tokens, ele);
+                    }
+                }
+            }
+        }
+        let mut tokens: HashSet<AccessToken> = HashSet::new();
+
+        inner(&mut tokens, self);
+        let mut result: Vec<AccessToken> = tokens.into_iter().collect();
+        result.sort();
+        AccessTokens { tokens: result }
     }
 }
 
@@ -519,6 +543,14 @@ mod tests {
     }
 
     #[test]
+    fn errors_serde() {
+        ::serde_test::assert_de_tokens_error::<AccessExpression>(
+            &[::serde_test::Token::String("a&c|b")],
+            "Cannot mix & with |, use parens to disambiguate",
+        )
+    }
+
+    #[test]
     fn display_epps() {
         assert_eq!(
             "Invalid token start '?'",
@@ -551,5 +583,53 @@ mod tests {
             "Trailing junction not allowed",
             format!("{}", ExpressionParseProblem::TrailingJunction)
         );
+    }
+
+    #[test]
+    fn relevant_tokens0() {
+        assert_eq!(
+            AccessTokens { tokens: vec![] },
+            AccessExpression::Empty.relevant_tokens()
+        )
+    }
+    #[test]
+    fn relevant_tokens1() {
+        let t = AccessToken::Unquoted("a".to_string());
+        assert_eq!(
+            AccessTokens {
+                tokens: vec![t.clone()]
+            },
+            AccessExpression::Token(t).relevant_tokens()
+        )
+    }
+    #[test]
+    fn relevant_tokens2_and() {
+        let t1 = AccessToken::Unquoted("a".to_string());
+        let t2 = AccessToken::Unquoted("b".to_string());
+        assert_eq!(
+            AccessTokens {
+                tokens: vec![t1.clone(), t2.clone()]
+            },
+            AccessExpression::And(vec![
+                AccessExpression::Token(t1),
+                AccessExpression::Token(t2)
+            ])
+            .relevant_tokens()
+        )
+    }
+    #[test]
+    fn relevant_tokens2_or() {
+        let t1 = AccessToken::Unquoted("a".to_string());
+        let t2 = AccessToken::Unquoted("b".to_string());
+        assert_eq!(
+            AccessTokens {
+                tokens: vec![t1.clone(), t2.clone()]
+            },
+            AccessExpression::Or(vec![
+                AccessExpression::Token(t1),
+                AccessExpression::Token(t2)
+            ])
+            .relevant_tokens()
+        )
     }
 }

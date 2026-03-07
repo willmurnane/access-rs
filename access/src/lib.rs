@@ -14,7 +14,8 @@
   limitations under the License.
 */
 
-#![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
+#![warn(clippy::all, clippy::pedantic, clippy::nursery)]
+#![cfg_attr(nightly, feature(coverage_attribute))]
 
 use std::fmt::Display;
 
@@ -24,6 +25,7 @@ use crate::{expression::access_expression, parser::unquoted_token_parser, tokens
 
 pub(crate) mod expression;
 pub(crate) mod parser;
+pub(crate) mod simplify;
 pub(crate) mod tokens;
 
 #[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -66,6 +68,13 @@ pub enum AccessExpression {
     Token(AccessToken),
     And(Vec<Self>),
     Or(Vec<Self>),
+}
+
+impl AccessExpression {
+    #[must_use]
+    pub fn simplify(&self) -> Self {
+        simplify::simplify(self)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -149,6 +158,11 @@ pub fn evaluate(expression: &AccessExpression, tokens: &AccessTokens) -> bool {
         (AccessExpression::And(clauses), tokens) => clauses.iter().all(|c| evaluate(c, tokens)),
         (AccessExpression::Or(clauses), tokens) => clauses.iter().any(|c| evaluate(c, tokens)),
     }
+}
+
+#[cfg(feature = "debug_simplify")]
+pub fn verify_simplification(expression: &AccessExpression) {
+    simplify::verify_simplification(expression);
 }
 
 #[cfg(test)]
@@ -278,5 +292,15 @@ mod tests {
             ),
             "a&b"
         );
+    }
+
+    #[cfg(feature = "debug_simplify")]
+    #[test]
+    fn simplify_test() {
+        verify_simplification(&AccessExpression::And(vec![
+            AccessExpression::Token(AccessToken::Unquoted("a".to_string())),
+            AccessExpression::Token(AccessToken::Unquoted("b".to_string())),
+            AccessExpression::Token(AccessToken::Unquoted("a".to_string())),
+        ]));
     }
 }

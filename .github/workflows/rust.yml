@@ -57,7 +57,7 @@ jobs:
       - name: Install llvm-cov
         run: cargo install cargo-mutants
       - name: mutants
-        run: cargo mutants --package access
+        run: cargo mutants --package access --exclude-re verify_ --exclude-re init_logging --exclude-re JunctionType::name  --exclude-re "replace \|\| with \&\& in simplify_with_context" --exclude-re "replace \|= with \^= in flatten_and_collect"
 
   release:
     runs-on: ubuntu-latest

@@ -11,20 +11,25 @@ readme = "README.md"
 
 [dependencies]
 afl = "*"
-access = { path = "../access" }
+access = { path = "../access", features = ["debug_simplify"] }
 
+[[bin]]
+name = "afl-access-eval"
+test = false
+doc = false
+bench = false
 [[bin]]
 name = "afl-access-expression"
 test = false
 doc = false
 bench = false
 [[bin]]
-name = "afl-access-tokens"
+name = "afl-access-simplify"
 test = false
 doc = false
 bench = false
 [[bin]]
-name = "afl-access-eval"
+name = "afl-access-tokens"
 test = false
 doc = false
 bench = false
