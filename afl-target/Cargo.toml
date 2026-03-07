@@ -14,6 +14,9 @@ afl = "*"
 access = { path = "../access", features = ["debug_simplify"] }
 j4rs = "*"
 
+[build-dependencies]
+j4rs = "*"
+
 [[bin]]
 name = "afl-access-eval"
 test = false
@@ -21,6 +24,11 @@ doc = false
 bench = false
 [[bin]]
 name = "afl-access-expression"
+test = false
+doc = false
+bench = false
+[[bin]]
+name = "afl-access-java"
 test = false
 doc = false
 bench = false
