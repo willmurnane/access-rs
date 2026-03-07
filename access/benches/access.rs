@@ -28,7 +28,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         "a&(b&c)",
     ] {
         c.bench_function(&format!("parse {}", sample), |b| {
-            b.iter(|| access_expression(black_box(sample)))
+            b.iter(|| expression(black_box(sample)))
         });
     }
 }
