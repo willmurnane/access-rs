@@ -743,6 +743,14 @@ mod tests {
     }
 
     #[test]
+    fn fuzz13() {
+        test_with_parsing(
+            "ddd|(addb&b&ca&e)|(addb&b&ca&adb&b&ca&e)|(addb&b&ca&e)",
+            "ddd|(addb&b&ca&e)",
+        );
+    }
+
+    #[test]
     fn hit_quadratic_step() {
         test_with_parsing("(a&b&c)|(a&b&d)|(b&c&d)|(a&b)", "(a&b)|(b&c&d)");
     }
@@ -814,35 +822,5 @@ mod satisfaction_tests {
             !is_implied_by(&left, &[right.clone()]),
             "Weak should not satisfy strong"
         );
-    }
-}
-
-#[cfg(test)]
-#[cfg(feature = "debug_simplify")]
-mod fuzz_crashes {
-    use crate::{expression::access_expression, simplify::verify_simplification};
-
-    #[cfg(feature = "debug_simplify")]
-    #[test]
-    fn fuzz_crashes() {
-        let path = std::env::current_dir().unwrap();
-        println!("The current directory is {}", path.display());
-
-        let paths = ::std::fs::read_dir("../out/m1/crashes");
-        if paths.is_err() {
-            return;
-        }
-
-        for p in paths.unwrap() {
-            let path = p.unwrap().path();
-            if path.ends_with("README.txt") {
-                continue;
-            }
-            let expr_str = String::from_utf8(std::fs::read(path).unwrap()).unwrap();
-            println!("Parsing as expression: {expr_str}");
-            let expr = access_expression(&expr_str).unwrap();
-            println!("==== Verifying simplification of '{expr}' ====");
-            verify_simplification(&expr);
-        }
     }
 }
