@@ -97,7 +97,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64/v2,linux/amd64/v3,linux/amd64/v4,linux/arm64
+          platforms: linux/amd64/v2,linux/amd64/v3,linux/arm64
           build-args: |
             fuzz_target=${{ matrix.fuzz_target }}
             flavor=${{ matrix.flavor }}
