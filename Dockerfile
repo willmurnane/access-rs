@@ -39,26 +39,22 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,id=build-${fuzz_target}-
     }; fi
 
 # Special dependency stage for 'java'.
-FROM ubuntu:latest AS access
+FROM docker.io/maven:3.9-amazoncorretto-25 AS access
 WORKDIR /result
 ENV M2_HOME=/opt/maven MAVEN_HOME=/opt/maven PATH=/opt/maven/bin:${PATH}
 ARG fuzz_target
 
 # Do everything in a single stage gated by fuzz_target, so that other targets can quickly skip it.
 RUN if [ ${fuzz_target} != java ]; then exit 0; fi && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends curl default-jdk git && \
-    mkdir -p /opt/maven && \
-    cd /opt/maven && \
-    curl -Lo maven.tar.gz https://dlcdn.apache.org/maven/maven-3/3.9.15/binaries/apache-maven-3.9.15-bin.tar.gz && \
-    tar --strip-components=1 -zxf maven.tar.gz && \
+    yum install -y git && \
     mkdir -p /build && \
     cd /build && \
     git clone https://github.com/apache/accumulo-access.git . && \
-    mvn package -DskipTests && \
-    mv /build/modules/core/target/accumulo-access-core-1.0.0-beta2-SNAPSHOT.jar /result/access.jar
+    mvn package --no-transfer-progress -DskipTests -pl :accumulo-access-core -am && \
+    find /build/ -name '*.jar' && \
+    mv /build/modules/core/target/accumulo-access-core-1.0.0-SNAPSHOT.jar /result/access.jar
 
-FROM eclipse-temurin:25
+FROM docker.io/library/eclipse-temurin:25
 ARG fuzz_target
 ARG flavor
 COPY --from=result  /app/result/ /
