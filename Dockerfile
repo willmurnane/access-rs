@@ -50,7 +50,7 @@ RUN if [ ${fuzz_target} != java ]; then exit 0; fi && \
     apt-get install -y --no-install-recommends curl default-jdk git && \
     mkdir -p /opt/maven && \
     cd /opt/maven && \
-    curl -Lo maven.tar.gz https://dlcdn.apache.org/maven/maven-3/3.9.14/binaries/apache-maven-3.9.14-bin.tar.gz && \
+    curl -Lo maven.tar.gz https://dlcdn.apache.org/maven/maven-3/3.9.15/binaries/apache-maven-3.9.15-bin.tar.gz && \
     tar --strip-components=1 -zxf maven.tar.gz && \
     mkdir -p /build && \
     cd /build && \
