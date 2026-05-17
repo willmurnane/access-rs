@@ -408,21 +408,18 @@ fn is_implied_by(requirement: &AccessExpression, provided: &[AccessExpression]) 
     for p in provided {
         match p {
             // 1. If we have an 'And' provided, we have all its children.
-            AccessExpression::And(p_children) => {
-                if is_implied_by(requirement, p_children) {
-                    return true;
-                }
+            AccessExpression::And(p_children) if is_implied_by(requirement, p_children) => {
+                return true;
             }
             // 2. If we have an 'Or' provided, it only satisfies the requirement if EVERY branch satisfies it.
-            AccessExpression::Or(p_children) => {
+            AccessExpression::Or(p_children)
                 // This is the key for the (af|s&a&w) case.
                 // An Or satisfies a requirement if all its paths satisfy the requirement.
                 if p_children
                     .iter()
                     .all(|p_child| is_implied_by(requirement, std::slice::from_ref(p_child)))
-                {
+                => {
                     return true;
-                }
             }
             _ => {}
         }
