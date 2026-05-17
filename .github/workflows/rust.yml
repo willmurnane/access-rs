@@ -8,6 +8,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
 
 jobs:
   lint:
@@ -58,6 +59,56 @@ jobs:
         run: cargo install cargo-mutants
       - name: mutants
         run: cargo mutants --package access --exclude-re verify_ --exclude-re init_logging --exclude-re JunctionType::name  --exclude-re "replace \|\| with \&\& in simplify_with_context" --exclude-re "replace \|= with \^= in flatten_and_collect"
+  fuzz-targets:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        flavor:
+          - vanilla
+          - asan
+        fuzz_target:
+          - eval
+          - expression
+          - java
+          - simplify
+          - tokens
+      # Continue trying all remaining builds, even if one fails.
+      fail-fast: false
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_NAME: ${{ github.repository }}
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64/v2,linux/amd64/v3,linux/arm64
+          build-args: |
+            fuzz_target=${{ matrix.fuzz_target }}
+            flavor=${{ matrix.flavor }}
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{matrix.fuzz_target}}-${{matrix.flavor}}:${{ env.BRANCH_NAME }}
+      - name: Generate artifact attestation
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{matrix.fuzz_target}}-${{matrix.flavor}}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
 
   release:
     runs-on: ubuntu-latest
