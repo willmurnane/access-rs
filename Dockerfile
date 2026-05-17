@@ -17,9 +17,10 @@ ARG flavor
 ENV FLAVOR=${flavor}
 ARG TARGETARCH
 ARG TARGETOS
+ARG TARGETVARIANT
 ENV J4RS_BASE_PATH=/app/result/deps
-RUN --mount=type=cache,target=/usr/local/cargo/registry,id=build-${fuzz_target}-${TARGETARCH}-${TARGETOS} \
-    --mount=type=cache,target=/app/target,id=build-${fuzz_target}-${TARGETARCH}-${TARGETOS} \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=build-${fuzz_target}-${TARGETARCH}${TARGETVARIANT}-${TARGETOS} \
+    --mount=type=cache,target=/app/target,id=build-${fuzz_target}-${TARGETARCH}${TARGETVARIANT}-${TARGETOS} \
     set -x; \
     if [ ${FLAVOR} = asan ]; then export RUSTFLAGS="$RUSTFLAGS -Zsanitizer=address"; fi && \
     cargo afl build --release --target=$(uname -m)-unknown-linux-gnu --bin afl-access-${fuzz_target} && \
